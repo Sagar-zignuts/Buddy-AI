@@ -738,19 +738,53 @@ function enableDragAndResize(host: HTMLDivElement, getMoveMode: () => boolean) {
   let startY = 0;
   let startLeft = 0;
   let startTop = 0;
+  const margin = 12; // distance from viewport edges
+
+  const clampToViewport = (leftCandidate: number, topCandidate: number) => {
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const elementWidth = host.offsetWidth;
+    const elementHeight = host.offsetHeight;
+
+    const maxLeft = Math.max(margin, viewportWidth - elementWidth - margin);
+    const maxTop = Math.max(margin, viewportHeight - elementHeight - margin);
+
+    const clampedLeft = Math.min(Math.max(leftCandidate, margin), maxLeft);
+    const clampedTop = Math.min(Math.max(topCandidate, margin), maxTop);
+
+    return { left: clampedLeft, top: clampedTop };
+  };
+
+  const keepInViewport = () => {
+    const rect = host.getBoundingClientRect();
+    const usingLeftPositioning = host.style.right === "";
+    if (!usingLeftPositioning) {
+      // Only adjust top when panel is still using right-based positioning
+      const { top } = clampToViewport(rect.left, rect.top);
+      host.style.top = `${top}px`;
+      return;
+    }
+
+    const { left, top } = clampToViewport(rect.left, rect.top);
+    host.style.left = `${left}px`;
+    host.style.top = `${top}px`;
+    host.style.right = "";
+  };
 
   const onMouseMove = (e: MouseEvent) => {
     if (!isDragging) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
-    host.style.left = `${startLeft + dx}px`;
-    host.style.top = `${startTop + dy}px`;
+    const { left, top } = clampToViewport(startLeft + dx, startTop + dy);
+    host.style.left = `${left}px`;
+    host.style.top = `${top}px`;
   };
 
   const onMouseUp = () => {
     isDragging = false;
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("mouseup", onMouseUp);
+    keepInViewport();
   };
 
   const onMouseDown = (e: MouseEvent) => {
@@ -808,6 +842,7 @@ function enableDragAndResize(host: HTMLDivElement, getMoveMode: () => boolean) {
     const newH = Math.max(240, startH + dy);
     host.style.width = `${newW}px`;
     host.style.maxHeight = `${newH}px`;
+    keepInViewport();
   };
 
   const onResizeUp = () => {
@@ -828,9 +863,16 @@ function enableDragAndResize(host: HTMLDivElement, getMoveMode: () => boolean) {
     document.addEventListener("mouseup", onResizeUp);
   });
 
+  // Keep panel inside viewport on window resize
+  const onWindowResize = () => {
+    keepInViewport();
+  };
+  window.addEventListener("resize", onWindowResize);
+
   return () => {
     clearInterval(interval);
     host.removeEventListener("mousedown", onMouseDown);
+    window.removeEventListener("resize", onWindowResize);
   };
 }
 
