@@ -163,3 +163,24 @@ export const getChatHistory = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const clearChat = async (req, res) => {
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    // Clear all messages for the user
+    const result = await ChatMessage.findOneAndUpdate(
+      { userId: req.user._id },
+      { $set: { messages: [] } },
+      { upsert: false, new: true }
+    );
+
+    // If no document exists, that's fine - chat is already empty
+    res.json({ success: true, message: "Chat cleared successfully" });
+  } catch (error) {
+    console.error("Clear Chat Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

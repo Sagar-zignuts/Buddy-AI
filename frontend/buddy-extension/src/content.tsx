@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { extractProblemText } from "./utils/dom";
-import { askForHints, login as apiLogin, sendOtp, verifyOtp, getMe, __injectGetToken, generateQuiz, BACKEND_URL, aiChat, getChatHistoryApi } from "./utils/api";
+import { askForHints, login as apiLogin, sendOtp, verifyOtp, getMe, __injectGetToken, generateQuiz, BACKEND_URL, aiChat, getChatHistoryApi, clearChatApi } from "./utils/api";
 import { getToken as storageGetToken, saveToken, clearToken } from "./utils/storage";
 import "./index.css";
 
@@ -123,12 +123,46 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: () => void }) {
 
 function detectLightTheme(): boolean {
   try {
-    const bg = getComputedStyle(document.documentElement).backgroundColor || "rgb(255,255,255)";
+    // Check multiple elements to get a better sense of the page background
+    const elements = [
+      document.documentElement,
+      document.body,
+      ...Array.from(document.querySelectorAll('main, article, section, div')).slice(0, 5)
+    ];
+    
+    let totalLuminance = 0;
+    let validSamples = 0;
+    
+    for (const el of elements) {
+      try {
+        const bg = getComputedStyle(el).backgroundColor;
+        if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') continue;
+        
+        const m = bg.match(/rgba?\((\d+),(\d+),(\d+)/);
+        if (!m) continue;
+        
+        const r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
+        const luminance = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
+        totalLuminance += luminance;
+        validSamples++;
+      } catch {}
+    }
+    
+    // If we have samples, use average; otherwise default to checking body
+    if (validSamples > 0) {
+      const avgLuminance = totalLuminance / validSamples;
+      return avgLuminance > 0.5; // Threshold for light theme
+    }
+    
+    // Fallback: check body background
+    const bg = getComputedStyle(document.body).backgroundColor || 
+               getComputedStyle(document.documentElement).backgroundColor || 
+               "rgb(255,255,255)";
     const m = bg.match(/rgba?\((\d+),(\d+),(\d+)/);
     if (!m) return false;
     const r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
     const luminance = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
-    return luminance > 0.6;
+    return luminance > 0.5;
   } catch { return false; }
 }
 
@@ -140,20 +174,31 @@ function BuddyPanel() {
   const [customQuestion, setCustomQuestion] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"hints" | "quiz" | "flashcards" | "chat">("hints");
   const [themeLight, setThemeLight] = useState<boolean>(false);
+  const [manualThemeOverride, setManualThemeOverride] = useState<boolean | null>(null);
+  const [moveMode, setMoveMode] = useState<boolean>(false);
   // quiz state
   const [quizText, setQuizText] = useState("");
   const [quizType, setQuizType] = useState<"mcq" | "short">("mcq");
   const [quizCount, setQuizCount] = useState(5);
   const [quizResult, setQuizResult] = useState<any>(null);
   const [mcqSelections, setMcqSelections] = useState<Record<number, number>>({});
-  // flashcard state for short answers
+  // flashcard state for short answers (used in quiz)
   const [cardIndex, setCardIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
   const [isFlipped, setIsFlipped] = useState(false);
   const [score, setScore] = useState(0);
+  // dedicated flashcards state
+  const [flashcardText, setFlashcardText] = useState("");
+  const [flashcardCount, setFlashcardCount] = useState(5);
+  const [flashcardResult, setFlashcardResult] = useState<any>(null);
+  const [flashcardCardIndex, setFlashcardCardIndex] = useState(0);
+  const [flashcardUserAnswer, setFlashcardUserAnswer] = useState("");
+  const [flashcardIsFlipped, setFlashcardIsFlipped] = useState(false);
+  const [flashcardScore, setFlashcardScore] = useState(0);
   // chat state
   const [chatInput, setChatInput] = useState("");
   const [chatHistory, setChatHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -166,7 +211,7 @@ function BuddyPanel() {
   useEffect(() => {
     const text = extractProblemText();
     setProblemText(text);
-    setThemeLight(detectLightTheme());
+    
     // Load chat history on mount (handles first load after auth)
     (async () => {
       try {
@@ -174,7 +219,41 @@ function BuddyPanel() {
         setChatHistory(h.messages as any);
       } catch {}
     })();
-  }, []);
+    
+    // Only auto-detect if manual override is not set
+    if (manualThemeOverride === null) {
+      // Invert logic: if website is light, extension should be dark (themeLight = false)
+      // if website is dark, extension should be light (themeLight = true)
+      const isWebsiteLight = detectLightTheme();
+      setThemeLight(!isWebsiteLight);
+    }
+    
+    // Re-check theme when page content changes (for dynamic sites) - only if no manual override
+    const observer = new MutationObserver(() => {
+      if (manualThemeOverride === null) {
+        const isWebsiteLight = detectLightTheme();
+        setThemeLight(!isWebsiteLight);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    return () => observer.disconnect();
+  }, [manualThemeOverride]);
+  
+  // Update theme when manual override changes
+  useEffect(() => {
+    if (manualThemeOverride !== null) {
+      setThemeLight(manualThemeOverride);
+    }
+  }, [manualThemeOverride]);
+  
+  // Update cursor and outline when move mode changes
+  useEffect(() => {
+    const host = document.getElementById("buddy-root-container");
+    if (host) {
+      host.style.cursor = moveMode ? "move" : "auto";
+      host.style.outline = moveMode ? "2px dashed rgba(255,255,255,0.35)" : "";
+    }
+  }, [moveMode]);
 
   const canAsk = useMemo(() => problemText.trim().length > 0, [problemText]);
 
@@ -200,7 +279,37 @@ function BuddyPanel() {
         const host = document.getElementById("buddy-root-container");
         if (host && host.parentElement) host.parentElement.removeChild(host);
       }}>×</button>
-      <div className="buddy-header" id="buddy-drag-handle">Buddy</div>
+      <div className="buddy-header" id="buddy-drag-handle">
+        <span>Buddy</span>
+        <div className="buddy-header-buttons">
+          <button 
+            className={`buddy-move-btn ${moveMode ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMoveMode(!moveMode);
+            }}
+            title={moveMode ? "Click to disable move mode" : "Click to enable move mode (drag anywhere)"}
+          >
+            {moveMode ? "Done" : "Move"}
+          </button>
+          <button 
+            className="buddy-theme-toggle" 
+            onClick={(e) => {
+              e.stopPropagation();
+              if (manualThemeOverride === null) {
+                // First manual toggle - set to opposite of current auto-detected theme
+                setManualThemeOverride(!themeLight);
+              } else {
+                // Toggle between light and dark
+                setManualThemeOverride(!manualThemeOverride);
+              }
+            }}
+            title={themeLight ? "Switch to Dark Theme" : "Switch to Light Theme"}
+          >
+            {themeLight ? "🌙" : "☀️"}
+          </button>
+        </div>
+      </div>
       <div className="buddy-row" style={{ gap: 8, marginTop: 6 }}>
         <button className="buddy-btn" onClick={() => setActiveTab("hints")} disabled={activeTab === "hints"}>Hints</button>
         <button className="buddy-btn" onClick={() => setActiveTab("quiz")} disabled={activeTab === "quiz"}>AI Quiz</button>
@@ -255,9 +364,35 @@ function BuddyPanel() {
 
       {activeTab === "chat" && (
         <div className="buddy-section">
-          <div className="buddy-label">Buddy Chat</div>
+          <div className="buddy-row" style={{justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+            <div className="buddy-label" style={{margin: 0}}>Buddy Chat</div>
+            {chatHistory.length > 0 && (
+              <button 
+                className="buddy-btn" 
+                style={{padding: '4px 10px', fontSize: '12px'}}
+                onClick={() => setShowClearConfirm(true)}
+                disabled={loading}
+              >
+                Clear Chat
+              </button>
+            )}
+          </div>
           <div className="buddy-row" style={{alignItems:'stretch'}}>
-            <input className="buddy-input" style={{flex:1}} value={chatInput} onChange={(e)=>setChatInput(e.target.value)} placeholder="Type your message…" />
+            <input className="buddy-input" style={{flex:1}} value={chatInput} onChange={(e)=>setChatInput(e.target.value)} placeholder="Type your message…" onKeyPress={(e) => {
+              if (e.key === 'Enter' && !loading && chatInput.trim().length > 0) {
+                (async () => {
+                  try {
+                    setLoading(true); setError("");
+                    const userMsg = chatInput.trim();
+                    setChatHistory(h=>[...h,{role:'user', content:userMsg}]);
+                    setChatInput("");
+                    const res = await aiChat(userMsg, chatHistory);
+                    setChatHistory(h=>[...h,{role:'assistant', content: res.reply}]);
+                  } catch(e:any){ setError(e?.message||'Chat failed'); }
+                  finally { setLoading(false); }
+                })();
+              }
+            }} />
             <button className="buddy-btn" disabled={loading || chatInput.trim().length===0} onClick={async ()=>{
               try {
                 setLoading(true); setError("");
@@ -279,6 +414,52 @@ function BuddyPanel() {
             ))}
           </div>
           {error && <div className="buddy-error">{error}</div>}
+          
+          {/* Clear Chat Confirmation Popup */}
+          {showClearConfirm && (
+            <div className="buddy-modal-overlay" onClick={() => setShowClearConfirm(false)}>
+              <div className="buddy-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="buddy-modal-header">
+                  <div className="buddy-label" style={{fontSize: '14px', fontWeight: 600, margin: 0}}>Clear Chat?</div>
+                </div>
+                <div className="buddy-modal-body">
+                  <p style={{margin: '8px 0', fontSize: '13px', opacity: 0.9}}>
+                    Are you sure you want to clear all chat messages? This action cannot be undone.
+                  </p>
+                </div>
+                <div className="buddy-modal-footer">
+                  <button 
+                    className="buddy-btn" 
+                    style={{flex: 1, background: 'rgba(239,68,68,0.8)'}}
+                    onClick={() => setShowClearConfirm(false)}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    className="buddy-btn" 
+                    style={{flex: 1, background: 'linear-gradient(135deg, #4CAF50 0%, #2E8B57 100%)'}}
+                    onClick={async () => {
+                      try {
+                        setLoading(true);
+                        setError("");
+                        await clearChatApi();
+                        setChatHistory([]);
+                        setShowClearConfirm(false);
+                      } catch(e:any) {
+                        setError(e?.message || 'Failed to clear chat');
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    disabled={loading}
+                  >
+                    {loading ? "Clearing…" : "Clear"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -346,8 +527,14 @@ function BuddyPanel() {
                   <div>
                     <div className="flashcard-wrapper">
                       <div className={`flashcard ${isFlipped?"is-flipped":""}`}>
-                        <div className="flashcard-face front"><strong>Q{cardIndex+1}:</strong> {current.question}</div>
-                        <div className="flashcard-face back"><strong>Answer:</strong> {current.answer}</div>
+                        <div className="flashcard-face front">
+                          <strong>Q{cardIndex+1}:</strong> 
+                          <div className="flashcard-content">{current.question}</div>
+                        </div>
+                        <div className="flashcard-face back">
+                          <strong>Answer:</strong> 
+                          <div className="flashcard-content">{current.answer}</div>
+                        </div>
                       </div>
                     </div>
                     <div className="buddy-row" style={{marginTop:10}}>
@@ -356,6 +543,139 @@ function BuddyPanel() {
                       <button className="buddy-btn" onClick={()=>{ setIsFlipped(false); setUserAnswer(""); setCardIndex(i=> Math.min(i+1, (qs.length-1))); }}>Next</button>
                     </div>
                     <div className="buddy-label" style={{marginTop:6}}>Score: {score} / {qs.length}</div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "flashcards" && (
+        <div className="buddy-section">
+          <div className="buddy-label">Enter topic or paste text to create flashcards</div>
+          <textarea className="buddy-textarea" rows={6} value={flashcardText} onChange={(e)=>setFlashcardText(e.target.value)} placeholder="Enter the topic or content you want to study..." />
+          <div className="buddy-row" style={{ gap:8 }}>
+            <input className="buddy-input" type="number" min={1} max={20} value={flashcardCount} onChange={(e)=>setFlashcardCount(parseInt(e.target.value||"5",10))} disabled={!!flashcardResult} placeholder="Number of cards" />
+            <button className="buddy-btn" disabled={flashcardText.trim().length===0 || loading} onClick={async ()=>{
+              try{ 
+                setLoading(true); 
+                setError(""); 
+                setFlashcardResult(null); 
+                setFlashcardCardIndex(0); 
+                setFlashcardScore(0); 
+                setFlashcardIsFlipped(false); 
+              } finally{}
+              try {
+                const res = await generateQuiz(flashcardText, "short", flashcardCount);
+                setFlashcardResult(res);
+              } catch(e:any){ setError(e?.message||"Flashcard generation failed"); }
+              finally { setLoading(false); }
+            }}>{loading?"Generating…":"Generate Flashcards"}</button>
+            {!!flashcardResult && <button className="buddy-btn" onClick={()=>{ 
+              setFlashcardResult(null); 
+              setFlashcardUserAnswer(""); 
+              setFlashcardIsFlipped(false); 
+              setFlashcardCardIndex(0); 
+              setFlashcardScore(0); 
+            }}>Reset</button>}
+          </div>
+          {error && <div className="buddy-error">{error}</div>}
+          {flashcardResult && (
+            <div className="buddy-section">
+              <div className="buddy-label">Flashcards</div>
+              {(() => {
+                const qs = flashcardResult?.questions||[];
+                if (qs.length === 0) {
+                  return <div className="buddy-hint">No flashcards generated. Try again with different content.</div>;
+                }
+                const current = qs[flashcardCardIndex] || {question:"", answer:""};
+                return (
+                  <div>
+                    <div className="buddy-label" style={{marginBottom:8}}>Card {flashcardCardIndex + 1} of {qs.length}</div>
+                    <div className="flashcard-wrapper">
+                      <div className={`flashcard ${flashcardIsFlipped?"is-flipped":""}`}>
+                        <div className="flashcard-face front">
+                          <strong>Question:</strong> 
+                          <div className="flashcard-content">{current.question}</div>
+                        </div>
+                        <div className="flashcard-face back">
+                          <strong>Answer:</strong> 
+                          <div className="flashcard-content">{current.answer}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="buddy-row" style={{marginTop:10}}>
+                      <input 
+                        className="buddy-input" 
+                        value={flashcardUserAnswer} 
+                        onChange={(e)=>setFlashcardUserAnswer(e.target.value)} 
+                        placeholder="Type your answer..." 
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !flashcardIsFlipped) {
+                            setFlashcardIsFlipped(true);
+                            if(flashcardUserAnswer.trim().toLowerCase() === String(current.answer||"").trim().toLowerCase()) {
+                              setFlashcardScore(s=>s+1);
+                            }
+                          }
+                        }}
+                      />
+                      <button 
+                        className="buddy-btn" 
+                        onClick={()=>{ 
+                          if (!flashcardIsFlipped) {
+                            setFlashcardIsFlipped(true); 
+                            if(flashcardUserAnswer.trim().toLowerCase() === String(current.answer||"").trim().toLowerCase()) {
+                              setFlashcardScore(s=>s+1);
+                            }
+                          } else {
+                            setFlashcardIsFlipped(false);
+                          }
+                        }}
+                      >
+                        {flashcardIsFlipped ? "Hide Answer" : "Check Answer"}
+                      </button>
+                      <button 
+                        className="buddy-btn" 
+                        onClick={()=>{ 
+                          setFlashcardIsFlipped(false); 
+                          setFlashcardUserAnswer(""); 
+                          setFlashcardCardIndex(i=> Math.min(i+1, (qs.length-1))); 
+                        }}
+                        disabled={flashcardCardIndex >= qs.length - 1}
+                      >
+                        Next
+                      </button>
+                    </div>
+                    <div className="buddy-row" style={{marginTop:8, justifyContent: 'space-between'}}>
+                      <button 
+                        className="buddy-btn" 
+                        onClick={()=>{ 
+                          setFlashcardIsFlipped(false); 
+                          setFlashcardUserAnswer(""); 
+                          setFlashcardCardIndex(i=> Math.max(0, i-1)); 
+                        }}
+                        disabled={flashcardCardIndex === 0}
+                        style={{flex: 1}}
+                      >
+                        Previous
+                      </button>
+                      <button 
+                        className="buddy-btn" 
+                        onClick={()=>{ 
+                          setFlashcardIsFlipped(false); 
+                          setFlashcardUserAnswer(""); 
+                          setFlashcardCardIndex(0); 
+                          setFlashcardScore(0);
+                        }}
+                        style={{flex: 1}}
+                      >
+                        Restart
+                      </button>
+                    </div>
+                    <div className="buddy-label" style={{marginTop:10, textAlign: 'center'}}>
+                      Score: {flashcardScore} / {qs.length}
+                    </div>
                   </div>
                 );
               })()}
@@ -411,14 +731,13 @@ function AppPanel() {
   return <BuddyPanel />;
 }
 
-function enableDragAndResize(host: HTMLDivElement) {
+function enableDragAndResize(host: HTMLDivElement, getMoveMode: () => boolean) {
   // Drag is enabled only in explicit move mode
   let isDragging = false;
   let startX = 0;
   let startY = 0;
   let startLeft = 0;
   let startTop = 0;
-  let moveMode = false; // when true, drag from anywhere
 
   const onMouseMove = (e: MouseEvent) => {
     if (!isDragging) return;
@@ -435,8 +754,12 @@ function enableDragAndResize(host: HTMLDivElement) {
   };
 
   const onMouseDown = (e: MouseEvent) => {
-    const canDrag = moveMode; // Only allow drag when in move mode
+    const canDrag = getMoveMode(); // Only allow drag when in move mode
     if (!canDrag) return;
+    // Don't drag if clicking on buttons
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) return;
+    
     isDragging = true;
     // Switch to left positioning if it was using right
     const rect = host.getBoundingClientRect();
@@ -451,7 +774,16 @@ function enableDragAndResize(host: HTMLDivElement) {
   };
 
   host.addEventListener("mousedown", onMouseDown);
-
+  
+  // Update cursor based on move mode
+  const updateCursor = () => {
+    host.style.cursor = getMoveMode() ? "move" : "auto";
+    host.style.outline = getMoveMode() ? "2px dashed rgba(255,255,255,0.35)" : "";
+  };
+  
+  // Check move mode periodically
+  const interval = setInterval(updateCursor, 100);
+  
   // Add resize handle (bottom-right corner)
   const resizer = document.createElement("div");
   resizer.style.position = "absolute";
@@ -496,36 +828,10 @@ function enableDragAndResize(host: HTMLDivElement) {
     document.addEventListener("mouseup", onResizeUp);
   });
 
-  // Add Move toggle button
-  const moveBtn = document.createElement("button");
-  moveBtn.textContent = "Move";
-  moveBtn.style.position = "absolute";
-  moveBtn.style.top = "6px";
-  moveBtn.style.right = "8px";
-  moveBtn.style.padding = "4px 8px";
-  moveBtn.style.fontSize = "12px";
-  moveBtn.style.border = "none";
-  moveBtn.style.borderRadius = "8px";
-  moveBtn.style.cursor = "pointer";
-  moveBtn.style.background = "linear-gradient(135deg, #ffffff 0%, #1f2937 100%)";
-  moveBtn.style.color = "#fff";
-  moveBtn.style.opacity = "0.9";
-  moveBtn.title = "Toggle move mode (drag anywhere)";
-  host.appendChild(moveBtn);
-
-  function updateMoveUI() {
-    host.style.outline = moveMode ? "2px dashed rgba(255,255,255,0.35)" : "";
-    host.style.cursor = moveMode ? "move" : "auto";
-    moveBtn.textContent = moveMode ? "Done" : "Move";
-  }
-
-  moveBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    moveMode = !moveMode;
-    updateMoveUI();
-  });
-
-  updateMoveUI();
+  return () => {
+    clearInterval(interval);
+    host.removeEventListener("mousedown", onMouseDown);
+  };
 }
 
 function mount() {
@@ -546,7 +852,18 @@ function mount() {
   document.documentElement.appendChild(host);
   const root = createRoot(rootContainer);
   root.render(<AppPanel />);
-  enableDragAndResize(host);
+  
+  // Get move mode from the React component
+  let moveModeRef = false;
+  const getMoveMode = () => {
+    const moveBtn = host.querySelector('.buddy-move-btn');
+    if (moveBtn) {
+      moveModeRef = moveBtn.classList.contains('active');
+    }
+    return moveModeRef;
+  };
+  
+  enableDragAndResize(host, getMoveMode);
 }
 
 // Toggle function (mount if not present, otherwise remove)

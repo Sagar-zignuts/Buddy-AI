@@ -114,3 +114,13 @@ export async function getChatHistoryApi() {
   return json as { success: true; messages: Array<{ role: "user" | "assistant"; content: string }> };
 }
 
+export async function clearChatApi() {
+  const res = await fetch(`${BACKEND_URL}/api/ai/chat/clear`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success) throw new Error(json?.message || `Clear chat failed (${res.status})`);
+  return json as { success: true; message: string };
+}
+

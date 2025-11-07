@@ -20,17 +20,16 @@ export const protect = async (req, res, next) => {
     // Verify token
     const decoded = verifyToken(token);
 
-    // Get user from token
+    // Get user from token (using UUID string instead of ObjectId)
     const user = await User.findById(decoded.userId).select("-password -otp");
-    if (!user || user.tokenVersion !== (decoded.tokenVersion ?? 0)) {
-      return res.status(401).json({ success: false, message: "Session expired. Please login again." });
-    }
-
     if (!user) {
       return res.status(401).json({
         success: false,
         message: "User not found. Token is invalid.",
       });
+    }
+    if (user.tokenVersion !== (decoded.tokenVersion ?? 0)) {
+      return res.status(401).json({ success: false, message: "Session expired. Please login again." });
     }
 
     req.user = user;

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 
 const messageSchema = new mongoose.Schema(
   {
@@ -11,7 +12,11 @@ const messageSchema = new mongoose.Schema(
 
 const chatMessageSchema = new mongoose.Schema(
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true, unique: true },
+    _id: {
+      type: String,
+      default: () => uuidv4(),
+    },
+    userId: { type: String, ref: "User", index: true, unique: true, required: true },
     messages: { type: [messageSchema], default: [] },
   },
   { timestamps: true }
