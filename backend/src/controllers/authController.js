@@ -168,8 +168,11 @@ export const verifyOTP = async (req, res) => {
     });
     await user.save();
 
-    // Generate JWT token
+    // Generate JWT token and mark active
     const token = generateToken(user._id, user.tokenVersion || 0);
+    user.token = token;
+    user.isActive = true;
+    await user.save();
 
     // Send welcome email (non-blocking, don't fail if email fails)
     const isNewUser = !user.loginHistory || user.loginHistory.length <= 1;
@@ -188,6 +191,7 @@ export const verifyOTP = async (req, res) => {
         email: user.email,
         name: user.name,
         isEmailVerified: user.isEmailVerified,
+        isActive: user.isActive,
       },
     });
   } catch (error) {
@@ -238,10 +242,12 @@ export const login = async (req, res) => {
       ipAddress: req.ip || req.connection.remoteAddress,
       userAgent: req.headers["user-agent"],
     });
-    await user.save();
 
     // Generate JWT token
     const token = generateToken(user._id, user.tokenVersion || 0);
+    user.token = token;
+    user.isActive = true;
+    await user.save();
 
     // Send welcome email if first login (non-blocking)
     const isFirstLogin = !user.loginHistory || user.loginHistory.length === 0;
@@ -260,6 +266,7 @@ export const login = async (req, res) => {
         email: user.email,
         name: user.name,
         isEmailVerified: user.isEmailVerified,
+        isActive: user.isActive,
       },
     });
   } catch (error) {
@@ -311,6 +318,9 @@ export const googleCallback = async (req, res, next) => {
 
       // Generate JWT token
       const token = generateToken(user._id, user.tokenVersion || 0);
+      user.token = token;
+      user.isActive = true;
+      await user.save();
 
       // Send welcome email if first login (non-blocking)
       const isFirstLogin = !user.loginHistory || user.loginHistory.length <= 1;
@@ -353,6 +363,7 @@ export const getMe = async (req, res) => {
         email: user.email,
         name: user.name,
         isEmailVerified: user.isEmailVerified,
+        isActive: user.isActive,
         createdAt: user.createdAt,
         lastLoginAt: user.lastLoginAt,
       },
@@ -363,6 +374,25 @@ export const getMe = async (req, res) => {
       success: false,
       message: error.message || "Failed to get user info",
     });
+  }
+};
+
+// Logout current user
+export const logout = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    user.isActive = false;
+    user.token = null;
+    // Invalidate all existing JWTs by bumping tokenVersion
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    await user.save();
+    res.json({ success: true, message: "Logged out successfully" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ success: false, message: error.message || "Logout failed" });
   }
 };
 

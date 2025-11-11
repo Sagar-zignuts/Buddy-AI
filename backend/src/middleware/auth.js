@@ -31,6 +31,13 @@ export const protect = async (req, res, next) => {
     if (user.tokenVersion !== (decoded.tokenVersion ?? 0)) {
       return res.status(401).json({ success: false, message: "Session expired. Please login again." });
     }
+    // Extra guard: token must exist on user and match, and user must be active
+    if (!user.isActive) {
+      return res.status(401).json({ success: false, message: "User is not active. Please login." });
+    }
+    if (!user.token || user.token !== token) {
+      return res.status(401).json({ success: false, message: "Invalid session token." });
+    }
 
     req.user = user;
     next();

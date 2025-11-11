@@ -14,6 +14,7 @@ import {
   getChatHistoryApi,
   clearChatApi,
   reviewCodeApi,
+  logoutApi,
 } from "./utils/api";
 import {
   getToken as storageGetToken,
@@ -479,6 +480,31 @@ function BuddyPanel() {
       <div className="buddy-header" id="buddy-drag-handle">
         <span>Buddy</span>
         <div className="buddy-header-buttons">
+          <button
+            className="buddy-move-btn"
+            onClick={async (e) => {
+              e.stopPropagation();
+              try {
+                setLoading(true);
+                setError("");
+                await logoutApi();
+              } catch (e: any) {
+                // ignore
+              } finally {
+                await clearToken();
+                // Force re-auth view
+                const host = document.getElementById("buddy-root-container");
+                if (host && host.parentElement) host.parentElement.removeChild(host);
+                // re-open, then close to remount fresh auth view
+                try { (window as any).__buddyTogglePanel?.(); } catch {}
+                setTimeout(() => { try { (window as any).__buddyTogglePanel?.(); } catch {} }, 20);
+                setLoading(false);
+              }
+            }}
+            title="Logout"
+          >
+            Logout
+          </button>
           <button
             className={`buddy-move-btn ${moveMode ? "active" : ""}`}
             onClick={(e) => {

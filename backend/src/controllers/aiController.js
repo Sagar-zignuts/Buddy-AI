@@ -16,7 +16,7 @@ export const getHint = async (req, res) => {
         Please provide a hint for the problem. , Don't give me the solution, just the hint.`;
 
     // Allow overriding model via env; default to a common v1 model
-    const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const modelName = "gemini-2.5-flash";
     const model = geminiClient.getGenerativeModel({
       model: modelName,
     });
@@ -36,7 +36,7 @@ export const getHint = async (req, res) => {
   }
 };
 
-// New: AI Quiz Generator
+// AI Quiz Generator
 export const generateQuiz = async (req, res) => {
   try {
     const { text, type = "mcq", numQuestions = 5 } = req.body || {};
@@ -108,7 +108,7 @@ ${text}
   }
 };
 
-// New: AI Chat (empathetic assistant)
+// AI Chat (empathetic assistant)
 export const aiChat = async (req, res) => {
   try {
     const { message, history = [] } = req.body || {};

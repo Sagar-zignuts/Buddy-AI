@@ -63,6 +63,17 @@ const userSchema = new mongoose.Schema(
       default: 0,
       index: true,
     },
+    // New fields
+    token: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    isActive: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

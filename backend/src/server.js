@@ -18,12 +18,14 @@ const app = express();
 
 // Middleware
 // CORS configuration - allow all origins for browser extension compatibility
-app.use(cors({
-  origin: true, // Allow all origins (needed for browser extensions)
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+app.use(
+  cors({
+    origin: true, // Allow all origins (needed for browser extensions)
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(passport.initialize());
@@ -48,7 +50,6 @@ try {
   cron.schedule("0 0 * * *", async () => {
     try {
       await User.updateMany({}, { $inc: { tokenVersion: 1 } });
-      console.log("🔒 Nightly logout: tokenVersion incremented for all users");
     } catch (e) {
       console.error("Nightly logout failed:", e);
     }

@@ -111,10 +111,8 @@ export const sendOTPEmail = async (email, otp, name = "User") => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP email sent to ${email}: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error(`❌ Error sending OTP email: ${error.message}`);
     throw error;
   }
 };
@@ -334,4 +332,3 @@ export const sendWelcomeEmail = async (email, name = "User") => {
     return false;
   }
 };
-

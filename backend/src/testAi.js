@@ -26,7 +26,6 @@ async function testGemini() {
     try {
       const list = await genAI.listModels?.();
       if (list && list.models) {
-        console.log("Available models:");
         for (const m of list.models) {
           console.log("-", m.name);
         }

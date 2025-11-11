@@ -181,3 +181,15 @@ export async function reviewCodeApi(code: string) {
     throw new Error(json?.message || `Code review failed (${res.status})`);
   return json as { success: true; review: string };
 }
+
+// Logout API
+export async function logoutApi() {
+  const res = await fetch(`${BACKEND_URL}/api/auth/logout`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.success)
+    throw new Error(json?.message || `Logout failed (${res.status})`);
+  return json as { success: true; message: string };
+}
