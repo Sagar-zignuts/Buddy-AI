@@ -21,6 +21,8 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [step, setStep] = useState<"choose" | "otp">("choose");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [themeLight, setThemeLight] = useState<boolean>(false);
+  const [manualThemeOverride, setManualThemeOverride] = useState<boolean | null>(null);
 
   async function handleSendOtp() {
     try {
@@ -63,9 +65,57 @@ function AuthPanel({ onAuthenticated }: { onAuthenticated: () => void }) {
     }
   }
 
+  useEffect(() => {
+    // Only auto-detect if manual override is not set
+    if (manualThemeOverride === null) {
+      // Invert logic: if website is light, extension should be dark (themeLight = false)
+      // if website is dark, extension should be light (themeLight = true)
+      const isWebsiteLight = detectLightTheme();
+      setThemeLight(!isWebsiteLight);
+    }
+    
+    // Re-check theme when page content changes (for dynamic sites) - only if no manual override
+    const observer = new MutationObserver(() => {
+      if (manualThemeOverride === null) {
+        const isWebsiteLight = detectLightTheme();
+        setThemeLight(!isWebsiteLight);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    return () => observer.disconnect();
+  }, [manualThemeOverride]);
+  
+  // Update theme when manual override changes
+  useEffect(() => {
+    if (manualThemeOverride !== null) {
+      setThemeLight(manualThemeOverride);
+    }
+  }, [manualThemeOverride]);
+
+  const containerClass = `buddy-container${themeLight ? " light" : ""}`;
   return (
-    <div className="buddy-container">
-      <div className="buddy-header" id="buddy-drag-handle">Buddy • Sign in</div>
+    <div className={containerClass}>
+      <div className="buddy-header" id="buddy-drag-handle">
+        <span>Buddy • Sign in</span>
+        <div className="buddy-header-buttons">
+          <button 
+            className="buddy-theme-toggle" 
+            onClick={(e) => {
+              e.stopPropagation();
+              if (manualThemeOverride === null) {
+                // First manual toggle - set to opposite of current auto-detected theme
+                setManualThemeOverride(!themeLight);
+              } else {
+                // Toggle between light and dark
+                setManualThemeOverride(!manualThemeOverride);
+              }
+            }}
+            title={themeLight ? "Switch to Dark Theme" : "Switch to Light Theme"}
+          >
+            {themeLight ? "🌙" : "☀️"}
+          </button>
+        </div>
+      </div>
       <div className="buddy-row" style={{justifyContent:"space-between"}}>
         <button className="buddy-btn" onClick={() => {
           const w = window.open(`${BACKEND_URL}/api/auth/google?state=ext`, "buddy_google_oauth", "width=480,height=640");
