@@ -2,65 +2,60 @@ import { geminiClient } from "../config/gemini.js";
 import ChatMessage from "../models/ChatMessage.js";
 
 export const getHint = async (req, res) => {
-    try {
-        const { problemText } = req.body;
+  try {
+    const { problemText } = req.body;
 
-        if (!problemText) {
-            return res.status(400).json({
-                success: false,
-                error: "Problem text is required",
-            });
-        }
+    if (!problemText) {
+      return res.status(400).json({
+        success: false,
+        error: "Problem text is required",
+      });
+    }
 
-        const prompt = `${problemText}
+    const prompt = `${problemText}
         Please provide a hint for the problem. , Don't give me the solution, just the hint.`;
 
-        // Allow overriding model via env; default to a common v1 model
-        const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-        const model = geminiClient.getGenerativeModel({
-            model: modelName,
-        });
+    // Allow overriding model via env; default to a common v1 model
+    const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const model = geminiClient.getGenerativeModel({
+      model: modelName,
+    });
 
-        // ✅ Proper generateContent call
-        const result = await model.generateContent(prompt);
+    // ✅ Proper generateContent call
+    const result = await model.generateContent(prompt);
 
-        const text = result.response.text();
+    const text = result.response.text();
 
-        res.json({
-            success: true,
-            hint: text,
-        });
-    } catch (error) {
-        console.error("Gemini API Error:", error);
-        res.status(500).json({ success: false, message: error.message });
-    }
+    res.json({
+      success: true,
+      hint: text,
+    });
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // New: AI Quiz Generator
 export const generateQuiz = async (req, res) => {
-    try {
-        const { text, type = "mcq", numQuestions = 5 } = req.body || {};
-        if (!text || typeof text !== "string") {
-            return res
-                .status(400)
-                .json({ success: false, message: "text is required" });
-        }
-        const normalizedType = String(type).toLowerCase();
-        const count = Math.min(
-            Math.max(parseInt(numQuestions, 10) || 5, 1),
-            20
-        );
+  try {
+    const { text, type = "mcq", numQuestions = 5 } = req.body || {};
+    if (!text || typeof text !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, message: "text is required" });
+    }
+    const normalizedType = String(type).toLowerCase();
+    const count = Math.min(Math.max(parseInt(numQuestions, 10) || 5, 1), 20);
 
-        const model = geminiClient.getGenerativeModel({
-            model: "gemini-2.5-flash",
-        });
-        const prompt = `
+    const model = geminiClient.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
+    const prompt = `
 You are an expert educator.
 Create a ${
-            normalizedType === "mcq"
-                ? "multiple-choice quiz"
-                : "short-answer quiz"
-        } from the following content.
+      normalizedType === "mcq" ? "multiple-choice quiz" : "short-answer quiz"
+    } from the following content.
 
 Constraints:
 - Number of questions: ${count}
@@ -68,8 +63,8 @@ Constraints:
 - Output MUST be strict JSON. No markdown, no commentary.
 - JSON schema:
 ${
-    normalizedType === "mcq"
-        ? `{
+  normalizedType === "mcq"
+    ? `{
   "success": true,
   "type": "mcq",
   "questions": [
@@ -80,7 +75,7 @@ ${
     }
   ]
 }`
-        : `{
+    : `{
   "success": true,
   "type": "short",
   "questions": [
@@ -97,20 +92,20 @@ Source text:
 ${text}
 """`;
 
-        const result = await model.generateContent(prompt);
-        const raw = result.response.text();
-        // Best effort to parse JSON even if model adds code fences
-        const clean = raw.trim().replace(/^```json\n?|```$/g, "");
-        try {
-            const json = JSON.parse(clean);
-            return res.json(json);
-        } catch (_) {
-            return res.json({ success: true, type: normalizedType, raw });
-        }
-    } catch (error) {
-        console.error("Gemini Quiz Error:", error);
-        res.status(500).json({ success: false, message: error.message });
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text();
+    // Best effort to parse JSON even if model adds code fences
+    const clean = raw.trim().replace(/^```json\n?|```$/g, "");
+    try {
+      const json = JSON.parse(clean);
+      return res.json(json);
+    } catch (_) {
+      return res.json({ success: true, type: normalizedType, raw });
     }
+  } catch (error) {
+    console.error("Gemini Quiz Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // New: AI Chat (empathetic assistant)
@@ -118,9 +113,13 @@ export const aiChat = async (req, res) => {
   try {
     const { message, history = [] } = req.body || {};
     if (!message || typeof message !== "string") {
-      return res.status(400).json({ success: false, message: "message is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "message is required" });
     }
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = geminiClient.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
     const persona = `You are Buddy, an empathetic AI coding companion.
 - Communicate warmly with concise, high-signal answers.
 - Use friendly tone and mild emojis when appropriate.
@@ -128,7 +127,9 @@ export const aiChat = async (req, res) => {
 - Always provide a concrete next step.`;
 
     const chatPrompt = `${persona}\n\nConversation so far:\n${history
-      .map((h) => (h?.role === "user" ? `User: ${h.content}` : `Buddy: ${h.content}`))
+      .map((h) =>
+        h?.role === "user" ? `User: ${h.content}` : `Buddy: ${h.content}`
+      )
       .join("\n")}\n\nUser: ${message}\nBuddy:`;
 
     const result = await model.generateContent(chatPrompt);
@@ -140,7 +141,13 @@ export const aiChat = async (req, res) => {
         { userId: req.user._id },
         {
           $push: {
-            messages: { $each: [ { role: "user", content: message }, { role: "assistant", content: text } ], $slice: -200 },
+            messages: {
+              $each: [
+                { role: "user", content: message },
+                { role: "assistant", content: text },
+              ],
+              $slice: -200,
+            },
           },
         },
         { upsert: true, new: true }
@@ -181,6 +188,53 @@ export const clearChat = async (req, res) => {
     res.json({ success: true, message: "Chat cleared successfully" });
   } catch (error) {
     console.error("Clear Chat Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Code Review endpoint
+export const reviewCode = async (req, res) => {
+  try {
+    const { code } = req.body;
+
+    if (!code || typeof code !== "string" || code.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Code is required",
+      });
+    }
+
+    const model = geminiClient.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
+
+    const prompt = `You are an expert code reviewer. Analyze the following code and provide a comprehensive review.
+
+Code to review:
+\`\`\`
+${code}
+\`\`\`
+
+Please provide a detailed review that includes:
+1. **Overall Assessment**: First, determine if the code is well-written and solves the original problem effectively. Only give appreciation if the code is truly excellent and solves the problem correctly.
+2. **Strengths**: What the code does well (only if there are genuine strengths)
+3. **Issues & Mistakes**: Identify any bugs, errors, logic issues, or potential problems
+4. **Improvements**: Suggest specific improvements for better code quality, performance, readability, or maintainability
+5. **Best Practices**: Point out any violations of coding best practices and suggest corrections
+
+Be honest and constructive. If the code has significant issues, focus on helping the developer fix them. If the code is excellent, acknowledge it genuinely.
+
+Format your response clearly with sections.`;
+
+    const result = await model.generateContent(prompt);
+    const review = result.response.text();
+
+    res.json({
+      success: true,
+      review: review,
+    });
+  } catch (error) {
+    console.error("Code Review Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
