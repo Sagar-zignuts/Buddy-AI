@@ -23,4 +23,3 @@ export async function clearToken(): Promise<void> {
   }
   localStorage.removeItem(TOKEN_KEY);
 }
-

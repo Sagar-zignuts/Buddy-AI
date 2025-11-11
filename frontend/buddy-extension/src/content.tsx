@@ -494,10 +494,17 @@ function BuddyPanel() {
                 await clearToken();
                 // Force re-auth view
                 const host = document.getElementById("buddy-root-container");
-                if (host && host.parentElement) host.parentElement.removeChild(host);
+                if (host && host.parentElement)
+                  host.parentElement.removeChild(host);
                 // re-open, then close to remount fresh auth view
-                try { (window as any).__buddyTogglePanel?.(); } catch {}
-                setTimeout(() => { try { (window as any).__buddyTogglePanel?.(); } catch {} }, 20);
+                try {
+                  (window as any).__buddyTogglePanel?.();
+                } catch {}
+                setTimeout(() => {
+                  try {
+                    (window as any).__buddyTogglePanel?.();
+                  } catch {}
+                }, 20);
                 setLoading(false);
               }
             }}
